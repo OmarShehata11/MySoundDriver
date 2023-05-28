@@ -26,14 +26,6 @@ DRIVER_NOTIFICATION_CALLBACK_ROUTINE UsbDriverCallBackRoutine;
 // functions for the cancel-safe Irp framework
 //
 
-/*
-void CsqRemoveIrp(IN PIO_CSQ Csq, IN PIRP Irp);
-NTSTATUS CsqInsertIrp(IN _IO_CSQ* Csq, IN PIRP Irp, IN PVOID InsertContext);
-PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext);
-void CsqAcquireLock(IN PIO_CSQ Csq, OUT PKIRQL Irql);
-void CsqReleaseLock(IN PIO_CSQ Csq, IN KIRQL Irql);
-void CsqCompleteCanceledIrp(IN PIO_CSQ Csq, IN PIRP Irp);
-*/
 
 IO_CSQ_INSERT_IRP_EX CsqInsertIrp;
 IO_CSQ_REMOVE_IRP CsqRemoveIrp;
@@ -99,10 +91,17 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING)
 		return status;
 	}
 
+	//
+	// Set the Dispatch routines 
+	//
 	DriverObject->DriverUnload = DriverUnload;
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = CreateCloseFunction;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ControlCodeFunction;
+	
+	// GUID for usb port to register PnP notification with
 	GUID UsbGuid = GUID_DEVINTERFACE_USB_DEVICE;
+
+
 
 	status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, 0, (PVOID) &UsbGuid, DriverObject, UsbDriverCallBackRoutine, nullptr, &ReturnNotificationValue);
 
@@ -121,6 +120,9 @@ void DriverUnload(PDRIVER_OBJECT DriverObject) {
 	UNICODE_STRING SymbolicLink;
 	
 	RtlInitUnicodeString(&SymbolicLink, L"\\??\\SoundSL");
+
+	// Remove all pending Irps in the queue
+	
 	
 	IoUnregisterPlugPlayNotification(ReturnNotificationValue);
 	IoDeleteSymbolicLink(&SymbolicLink);
@@ -161,17 +163,12 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 	// Now the Queue work..
 	// but first check if the queue is empty or not before pulling
 	//
-
-
-	// Check if it's empty..
 	
-	/*
 	if (IsListEmpty(&IrpQueueList))
 	{
-		KdPrint(("ERROR: THE QUEUE IS EMPTY, THERE'S NO QUEUED IRP TO BE PULLED OUT. EXIT"));
+		KdPrint(("The Queue is empty, Can't dequeue any."));
 		return STATUS_UNSUCCESSFUL;
 	}
-	*/
 
 	PIRP Irp = IoCsqRemoveNextIrp(&CancelSafeQueue, nullptr);
 
@@ -288,7 +285,7 @@ void CsqRemoveIrp(IN PIO_CSQ Csq, IN PIRP Irp) {
 	// This function just removes the Irp from the queue
 	// I won't use this function Directly (using the IoCsqRemoveIrp), because it need a specific Irp to be removed
 	// So it won't be usefull for me. Instead i will use IoCsqRemoveNextIrp. 
-	// And this function also calls the CsqRemoveIrp too.
+	// And this function also calls the CsqRemoveIrp too (after PeekNextIrp).
 	//
 
 	UNREFERENCED_PARAMETER(Csq);
