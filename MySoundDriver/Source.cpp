@@ -177,7 +177,7 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 
 	if (Irp == NULL)
 	{ 
-		KdPrint(("Error: Can't get the Irp from the Queue. Error code")); 
+		KdPrint(("Error: Can't get the Irp from the Queue. Queue seems to be empty")); 
 		return STATUS_UNSUCCESSFUL;
 	}
 
@@ -231,14 +231,11 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		// Everything is well..
 		KdPrint(("SUCCESS: the Irp now pushed to the queue."));
 
+
 		// Increment the number of Irps.
-		PLIST_ENTRY listPtrCount = &IrpQueueList;
-	
-		while(listPtrCount->Flink != &IrpQueueList)
-		{ 
-			nuOfQueuedIrps++;
-			listPtrCount = listPtrCount->Flink;
-		}
+		nuOfQueuedIrps++;
+
+
 		KdPrint((" Number of Irps in the queue : %i.", nuOfQueuedIrps));
 		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
 
