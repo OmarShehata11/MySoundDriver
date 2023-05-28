@@ -14,7 +14,7 @@ unsigned int nuOfQueuedIrps = 0;
 // List for our queue of the Irp
 // it's the List entry point (Head)
 //
-LIST_ENTRY pIrpQueueList;
+LIST_ENTRY IrpQueueList;
 IO_CSQ CancelSafeQueue;
 
 //
@@ -78,7 +78,7 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING)
 
 
 	// Initialzing the Queue and the Cancel-safe Framework functions.
-	InitializeListHead(&pIrpQueueList);
+	InitializeListHead(&IrpQueueList);
 	IoCsqInitializeEx(&CancelSafeQueue, CsqInsertIrp, CsqRemoveIrp, CsqPeekNextIrp, CsqAcquireLock, CsqReleaseLock, CsqCompleteCanceledIrp);
 
 
@@ -164,17 +164,20 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 
 
 	// Check if it's empty..
-	if (IsListEmpty(&pIrpQueueList))
+	
+	/*
+	if (IsListEmpty(&IrpQueueList))
 	{
 		KdPrint(("ERROR: THE QUEUE IS EMPTY, THERE'S NO QUEUED IRP TO BE PULLED OUT. EXIT"));
 		return STATUS_UNSUCCESSFUL;
 	}
+	*/
 
 	PIRP Irp = IoCsqRemoveNextIrp(&CancelSafeQueue, nullptr);
 
 	if (Irp == NULL)
-	{
-		KdPrint(("Error: Can't get the Irp from the Queue.")); 
+	{ 
+		KdPrint(("Error: Can't get the Irp from the Queue. Error code")); 
 		return STATUS_UNSUCCESSFUL;
 	}
 
@@ -214,6 +217,7 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	{
 	case IOCTL_MY_SOUND:
 		KdPrint(("Catched a new incoming IRP. Queuing it."));
+		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
 
 		// push the Irp to the queue
 		status = IoCsqInsertIrpEx(&CancelSafeQueue, Irp, nullptr, nullptr);
@@ -230,7 +234,8 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		// Increment the number of Irps.
 		nuOfQueuedIrps++;
 		KdPrint((" Number of Irps in the queue : %i.", nuOfQueuedIrps));
-		
+		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
+
 		status = STATUS_SUCCESS;
 
 		break;
@@ -259,9 +264,9 @@ NTSTATUS CsqInsertIrp(IN _IO_CSQ *Csq, IN PIRP Irp, IN PVOID InsertContext) {
 	UNREFERENCED_PARAMETER(InsertContext);
 
 	// Insert that Irp to the tail, to act as a queue
-	InsertTailList(&pIrpQueueList, &Irp->Tail.Overlay.ListEntry);
+	InsertTailList(&IrpQueueList, &Irp->Tail.Overlay.ListEntry);
 
-	if (IsListEmpty(&pIrpQueueList))
+	if (IsListEmpty(&IrpQueueList))
 	{
 		KdPrint(("FAIL: ADDING THE IRP TO THE QUEUE, list is empty in function %s", __FUNCTION__));
 		return STATUS_UNSUCCESSFUL;
@@ -306,14 +311,40 @@ PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext) {
 
 
 	// chech first if the list is empty
-	if (IsListEmpty(&pIrpQueueList))
+	if (IsListEmpty(&IrpQueueList))
 	{
 		KdPrint(("ERROR: there's no pending Irps to be removed from the list, from function %s", __FUNCTION__));
 		return NULL;
 	}
-
-	// Now we know that there are IRPs in the list, let's remove just the first from the Head
-	PLIST_ENTRY ListEntryIrp = (&pIrpQueueList);
+	
+	//
+	// Now we know that there are IRPs in the list. Now we got two choices.
+	// First if the framework passed the Irp as NULL. then we should get the FLINK 
+	// to the LIST HEAD, and if it specified a valid Irp, we will get the FLINK to that
+	// passed Irp
+	//
+	PLIST_ENTRY ListEntryIrp = (Irp) ? Irp->Tail.Overlay.ListEntry.Flink : IrpQueueList.Flink;
+ 
+	//
+	// Now we get the List entry for the wanted Irp. Let's first check if it's not 
+	// equals to the List Head itself 
+	//
+	if (ListEntryIrp != &IrpQueueList)
+	{
+		// Get the start of the irp
+		PIRP pIrp = CONTAINING_RECORD(ListEntryIrp, IRP, Tail.Overlay.ListEntry); 
+		
+		// There's no PeekContext Passed
+		if (!PeekContext)
+		{
+			KdPrint(("PRAVO: We Found the Irp to Be dequeued!"));
+			return pIrp;
+		}
+		
+		else
+			KdPrint(("WARNING: You specified a peekContext Value !!"));
+	
+	}
 
 	//
 	// The returned value from the above function is the ListEntry member from the Irp structure
@@ -323,11 +354,7 @@ PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext) {
 	// Head List then get the value of FLINK of it (pointer to the removed Irp)
 	// then use the macro to get the actuall point of the star of the Irp
 	//
-
-	PIRP pIrp = CONTAINING_RECORD(ListEntryIrp, IRP, Tail.Overlay.ListEntry);
-
-	return pIrp;
-
+	return NULL;
 }
 
 void CsqAcquireLock(IN PIO_CSQ Csq, OUT PKIRQL Irql) {
