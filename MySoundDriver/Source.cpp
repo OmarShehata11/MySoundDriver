@@ -104,7 +104,7 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING)
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ControlCodeFunction;
 	GUID UsbGuid = GUID_DEVINTERFACE_USB_DEVICE;
 
-	status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, 0, (PVOID) &UsbGuid, DriverObject, &UsbDriverCallBackRoutine, nullptr, &ReturnNotificationValue);
+	status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, 0, (PVOID) &UsbGuid, DriverObject, UsbDriverCallBackRoutine, nullptr, &ReturnNotificationValue);
 
 	if (status != STATUS_SUCCESS)
 	{
@@ -232,7 +232,13 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		KdPrint(("SUCCESS: the Irp now pushed to the queue."));
 
 		// Increment the number of Irps.
-		nuOfQueuedIrps++;
+		PLIST_ENTRY listPtrCount = &IrpQueueList;
+	
+		while(listPtrCount->Flink != &IrpQueueList)
+		{ 
+			nuOfQueuedIrps++;
+			listPtrCount = listPtrCount->Flink;
+		}
 		KdPrint((" Number of Irps in the queue : %i.", nuOfQueuedIrps));
 		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
 
@@ -323,7 +329,12 @@ PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext) {
 	// to the LIST HEAD, and if it specified a valid Irp, we will get the FLINK to that
 	// passed Irp
 	//
-	PLIST_ENTRY ListEntryIrp = (Irp) ? Irp->Tail.Overlay.ListEntry.Flink : IrpQueueList.Flink;
+	PLIST_ENTRY ListEntryIrp;
+	
+	if (Irp != NULL)
+		ListEntryIrp = Irp->Tail.Overlay.ListEntry.Flink;
+	else
+		ListEntryIrp = IrpQueueList.Flink;
  
 	//
 	// Now we get the List entry for the wanted Irp. Let's first check if it's not 
