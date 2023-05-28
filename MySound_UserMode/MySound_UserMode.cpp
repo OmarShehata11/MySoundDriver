@@ -1,7 +1,7 @@
 #include <iostream>
 #include <Windows.h>
 #include "../MySoundDriver/Header.h"
-
+#include <mmsystem.h>
 
 // To disable the CRT warnings from the compiler.
 #define _CRT_SECURE_NO_WARNINGS  
@@ -90,8 +90,8 @@ DWORD WINAPI ThreadStartRoutine(HANDLE hCompletionPort) {
 		}
 	
 		std::cout << "now dequeued the pending IOCP packet" << std::endl;
-
-
+		bool succ = PlaySound( L"D:\\MySoundDriver\\MySound_UserMode\\slack.wav", NULL, SND_FILENAME | SND_ASYNC);
+	
 	}
 	return 0;
 
