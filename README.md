@@ -9,4 +9,11 @@ In this project I faced a lot of new things. starting first with the driver it s
 
 I'm going to write some articles on my [portfolio](https://omarshehata11.github.io/) that describe those new topics I have learned.
 
+## How to run it
+First, you need to install the driver as a service using the *sc.exe* tool. Then start it and also start the usermode application. it will print to you the help page to choose :
+- 1 -> to send an Irp to the driver
+- 2 -> to exit 
+
+***NOTE***: You can monitor the output from the driver to see how many Pending Irps and which function is running now..etc. see it from any tool that prints Debugging output like **Dbgview** from *sysinternals*. 
+
 > if you have any question or anything related don't wait to message me :). ***SEE YA***
