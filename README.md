@@ -13,7 +13,10 @@ I'm going to write some articles on my [portfolio](https://omarshehata11.github.
 First, you need to install the driver as a service using the *sc.exe* tool. Then start it and also start the usermode application. it will print to you the help page to choose :
 - 1 -> to send an Irp to the driver
 - 2 -> to exit 
+### How to change the sound
+To change the sound file. just go the user-mode app and in the line **93** put your full path to the file. It's recommended to make the file name with no spaces within it. **And don't forget to put the escape characters when you write the path**.
 
 ***NOTE***: You can monitor the output from the driver to see how many Pending Irps and which function is running now..etc. see it from any tool that prints Debugging output like **Dbgview** from *sysinternals*. 
+
 
 > if you have any question or anything related don't wait to message me :). ***SEE YA***
