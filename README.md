@@ -1,5 +1,5 @@
 # MySoundDriver
-This is my second software kerne driver project. a WDM non-PnP kernel driver with a user-mode application that used to play a sound when a device was plagged-in or out with the USB-port, you choose by your self the sound file that would be played. 
+This is my second software kerne driver project. a WDM non-PnP kernel driver with a user-mode application that used to play a sound when a device was plagged-in or out to the USB-port, You choose the audio file to be played. 
 
 ## The internal structure
 In this project I faced a lot of new things. starting first with the driver it self:
