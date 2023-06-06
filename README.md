@@ -21,7 +21,6 @@ To change the sound file. just go the user-mode app and in the line **93** put y
 > if you have any question or anything related don't wait to message me :). ***SEE YA***
 
 ### Still missed
- - Create the DEVICE_EXTENSION structure
  - make the user-mode app send Irps automatically.
  - add PeekContext to Irps to distinguish between the different events (plugged-in or out). 
 
