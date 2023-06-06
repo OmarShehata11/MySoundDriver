@@ -8,14 +8,6 @@
 
 PVOID ReturnNotificationValue;
 
-// number of Irps queued in the queue.
-unsigned int nuOfQueuedIrps = 0;
-//
-// List for our queue of the Irp
-// it's the List entry point (Head)
-//
-LIST_ENTRY IrpQueueList;
-IO_CSQ CancelSafeQueue;
 
 //
 // Call back routine when the notification recieved from the PnP manager
@@ -67,24 +59,32 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING)
 
 	UNICODE_STRING DeviceName, SymbolicLinkName;
 	PDEVICE_OBJECT DeviceObject;
-
-
-	// Initialzing the Queue and the Cancel-safe Framework functions.
-	InitializeListHead(&IrpQueueList);
-	IoCsqInitializeEx(&CancelSafeQueue, CsqInsertIrp, CsqRemoveIrp, CsqPeekNextIrp, CsqAcquireLock, CsqReleaseLock, CsqCompleteCanceledIrp);
+	PDEVICE_EXTENSION lpDeviceExtension;
 
 
 	RtlInitUnicodeString(&DeviceName, L"\\Device\\SoundDriver");
 	RtlInitUnicodeString(&SymbolicLinkName, L"\\??\\SoundSL");
 
-	NTSTATUS status = IoCreateDevice(DriverObject, 0, &DeviceName, FILE_DEVICE_UNKNOWN, NULL, false, &DeviceObject);
+	// Add the DEVICE_EXTENSION structure size ...
+	NTSTATUS status = IoCreateDevice(DriverObject, sizeof(DEVICE_EXTENSION), &DeviceName, FILE_DEVICE_UNKNOWN, NULL, false, &DeviceObject);
 	if (status != STATUS_SUCCESS)
 	{
 		KdPrint(("Error: Create a Device Object"));
 		return status;
 	}
 
+	// 
+	// Initialize the Dev extension structure
+	//
+	lpDeviceExtension = (PDEVICE_EXTENSION) DeviceObject->DeviceExtension;
+
+
+	// Initialzing the Queue and the Cancel-safe Framework functions.
+	InitializeListHead(&lpDeviceExtension->IrpQueueList);
+	IoCsqInitializeEx(&lpDeviceExtension->CancelSafeQueue, CsqInsertIrp, CsqRemoveIrp, CsqPeekNextIrp, CsqAcquireLock, CsqReleaseLock, CsqCompleteCanceledIrp);
+
 	status = IoCreateSymbolicLink(&SymbolicLinkName, &DeviceName);
+	
 	if (status != STATUS_SUCCESS)
 	{
 		KdPrint(("Error: Create a Symbolic Link"));
@@ -101,9 +101,11 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING)
 	// GUID for usb port to register PnP notification with
 	GUID UsbGuid = GUID_DEVINTERFACE_USB_DEVICE;
 
-
-
-	status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, 0, (PVOID) &UsbGuid, DriverObject, UsbDriverCallBackRoutine, nullptr, &ReturnNotificationValue);
+	//
+	// Adding the device object to the context paramter 
+	// (to be used later in the callback routine.
+	//
+	status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, 0, (PVOID) &UsbGuid, DriverObject, UsbDriverCallBackRoutine, DeviceObject, &ReturnNotificationValue);
 
 	if (status != STATUS_SUCCESS)
 	{
@@ -140,7 +142,7 @@ NTSTATUS CreateCloseFunction(PDEVICE_OBJECT , PIRP Irp) {
 
 }
 
-NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
+NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID Context)
 {
 	AUTO_ENTER_LEAVE();
 
@@ -149,7 +151,12 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 	//
 
 	// Chech about the Notification..
+	PDEVICE_OBJECT devObj = (PDEVICE_OBJECT) Context;
+	PDEVICE_EXTENSION lpDeviceExtension = (PDEVICE_EXTENSION) devObj->DeviceExtension;
+
 	PDEVICE_INTERFACE_CHANGE_NOTIFICATION CurrentNotification = (PDEVICE_INTERFACE_CHANGE_NOTIFICATION)Notification;
+	
+	
 	if ( IsEqualGUID(CurrentNotification->Event , GUID_DEVICE_INTERFACE_ARRIVAL) )
 	{
 		KdPrint(("MY_SOUND DRIVER: there was a device with symbolic Link (%ws) added", CurrentNotification->SymbolicLinkName->Buffer));
@@ -164,13 +171,13 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 	// but first check if the queue is empty or not before pulling
 	//
 	
-	if (IsListEmpty(&IrpQueueList))
+	if (IsListEmpty(&lpDeviceExtension->IrpQueueList))
 	{
 		KdPrint(("The Queue is empty, Can't dequeue any."));
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	PIRP Irp = IoCsqRemoveNextIrp(&CancelSafeQueue, nullptr);
+	PIRP Irp = IoCsqRemoveNextIrp(&lpDeviceExtension->CancelSafeQueue, nullptr);
 
 	if (Irp == NULL)
 	{ 
@@ -181,8 +188,8 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 	KdPrint(("SUCCESS: the Irp now pulled from the queue."));
 
 	// Decrement the number of Irps.
-	nuOfQueuedIrps--;
-	KdPrint((" Number of Irps in the queue : %i.", nuOfQueuedIrps));
+	lpDeviceExtension->nuOfQueuedIrps--;
+	KdPrint((" Number of Irps in the queue : %i.", lpDeviceExtension->nuOfQueuedIrps));
 
 
 	//
@@ -198,9 +205,9 @@ NTSTATUS UsbDriverCallBackRoutine(IN PVOID Notification, IN PVOID)
 
 NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-	UNREFERENCED_PARAMETER(DeviceObject);
 	AUTO_ENTER_LEAVE();
 
+	PDEVICE_EXTENSION lpDeviceExtension = (PDEVICE_EXTENSION)DeviceObject->DeviceExtension;
 	// here; i should push the irp into the queue and then just return (after ofcourse checking if the the comming 
 	// IOCTL is what we need not any IOCTL. 
 
@@ -214,10 +221,10 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	{
 	case IOCTL_MY_SOUND:
 		KdPrint(("Catched a new incoming IRP. Queuing it."));
-		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
+		KdPrint(("is the list is empty: %d", IsListEmpty(&lpDeviceExtension->IrpQueueList)));
 
 		// push the Irp to the queue
-		status = IoCsqInsertIrpEx(&CancelSafeQueue, Irp, nullptr, nullptr);
+		status = IoCsqInsertIrpEx(&lpDeviceExtension->CancelSafeQueue, Irp, nullptr, nullptr);
 
 		if (!NT_SUCCESS(status))
 		{
@@ -230,11 +237,11 @@ NTSTATUS ControlCodeFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 
 		// Increment the number of Irps.
-		nuOfQueuedIrps++;
+		lpDeviceExtension->nuOfQueuedIrps++;
 
 
-		KdPrint((" Number of Irps in the queue : %i.", nuOfQueuedIrps));
-		KdPrint(("is the list is empty: %d", IsListEmpty(&IrpQueueList)));
+		KdPrint((" Number of Irps in the queue : %i.", lpDeviceExtension->nuOfQueuedIrps));
+		KdPrint(("is the list is empty: %d", IsListEmpty(&lpDeviceExtension->IrpQueueList)));
 
 		status = STATUS_SUCCESS;
 
@@ -253,6 +260,8 @@ NTSTATUS CsqInsertIrp(IN _IO_CSQ *Csq, IN PIRP Irp, IN PVOID InsertContext) {
 
 	AUTO_ENTER_LEAVE();
 
+	// Get the start of the DevExtension structure
+	PDEVICE_EXTENSION lpDeviceExtension = CONTAINING_RECORD(Csq, DEVICE_EXTENSION, CancelSafeQueue);
 	// 
 	// this fucntion just insert the Irp to the doubly-linked list.
 	// and we have the List Head as a global variable, so we don't need the 
@@ -260,13 +269,13 @@ NTSTATUS CsqInsertIrp(IN _IO_CSQ *Csq, IN PIRP Irp, IN PVOID InsertContext) {
 	//
 
 	// just to avoid the W4 error: unreferenced parameter
-	UNREFERENCED_PARAMETER(Csq); 
 	UNREFERENCED_PARAMETER(InsertContext);
 
-	// Insert that Irp to the tail, to act as a queue
-	InsertTailList(&IrpQueueList, &Irp->Tail.Overlay.ListEntry);
 
-	if (IsListEmpty(&IrpQueueList))
+	// Insert that Irp to the tail, to act as a queue
+	InsertTailList(&lpDeviceExtension->IrpQueueList, &Irp->Tail.Overlay.ListEntry);
+
+	if (IsListEmpty(&lpDeviceExtension->IrpQueueList))
 	{
 		KdPrint(("FAIL: ADDING THE IRP TO THE QUEUE, list is empty in function %s", __FUNCTION__));
 		return STATUS_UNSUCCESSFUL;
@@ -300,18 +309,18 @@ PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext) {
 	
 	AUTO_ENTER_LEAVE();
 
+	PDEVICE_EXTENSION lpDeviceExtension = CONTAINING_RECORD(Csq, DEVICE_EXTENSION, CancelSafeQueue);
 	//
 	// The idea here is to jsut get the first Irp I meet (only for my case).
 	// So I won't use the PeekContext
 	// 
 
 	UNREFERENCED_PARAMETER(PeekContext);
-	UNREFERENCED_PARAMETER(Csq);
 	UNREFERENCED_PARAMETER(Irp);
 
 
 	// chech first if the list is empty
-	if (IsListEmpty(&IrpQueueList))
+	if (IsListEmpty(&lpDeviceExtension->IrpQueueList))
 	{
 		KdPrint(("ERROR: there's no pending Irps to be removed from the list, from function %s", __FUNCTION__));
 		return NULL;
@@ -328,13 +337,13 @@ PIRP CsqPeekNextIrp(IN PIO_CSQ Csq, IN PIRP Irp, IN PVOID PeekContext) {
 	if (Irp != NULL)
 		ListEntryIrp = Irp->Tail.Overlay.ListEntry.Flink;
 	else
-		ListEntryIrp = IrpQueueList.Flink;
+		ListEntryIrp = lpDeviceExtension->IrpQueueList.Flink;
  
 	//
 	// Now we get the List entry for the wanted Irp. Let's first check if it's not 
 	// equals to the List Head itself 
 	//
-	if (ListEntryIrp != &IrpQueueList)
+	if (ListEntryIrp != &lpDeviceExtension->IrpQueueList)
 	{
 		// Get the start of the irp
 		PIRP pIrp = CONTAINING_RECORD(ListEntryIrp, IRP, Tail.Overlay.ListEntry); 

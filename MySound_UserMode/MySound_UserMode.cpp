@@ -6,15 +6,20 @@
 // To disable the CRT warnings from the compiler.
 #define _CRT_SECURE_NO_WARNINGS  
 
+unsigned short numOfPendingIrps = 0;
 
 DWORD WINAPI ThreadStartRoutine(HANDLE hCompletionPort);
 
 int main()
 {
 	OVERLAPPED overLappedStructure = { 0 };
+	OVERLAPPED *lpOverLappedStructure = nullptr;
 	DWORD threadId;
-	int choice, errorCode;
+	int choice = 0, errorCode = 0;
 	HANDLE hDevice, hCompletionPort, hThread;
+	BOOL status;
+	DWORD     NumberOfBytesTransferred = 0;
+	ULONG_PTR   CompletionKey = 0;
 	
 	hDevice = CreateFileA("\\\\.\\SoundSL", GENERIC_ALL, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 	
@@ -34,6 +39,7 @@ int main()
 
 	hThread = CreateThread(nullptr, 0, ThreadStartRoutine, hCompletionPort, 0, &threadId);
 
+	
 	while (TRUE) {
 		 
 		std::cout << "choose:\n\t1) send an Irp.\n\t2) Exit." << std::endl;
@@ -46,7 +52,8 @@ int main()
 				DeviceIoControl(hDevice, IOCTL_MY_SOUND, nullptr, 0, nullptr, 0, nullptr, &overLappedStructure);
 				
 				errorCode = GetLastError();
-				
+
+
 				if (errorCode != ERROR_IO_PENDING)
 				{
 					std::cout << "Error: the irp is not in the pending state. Error code " << errorCode << std::endl;
@@ -68,7 +75,38 @@ int main()
 		}
 
 	}
+	/*
+	while(1){ // Max number of queued irps = 5
+		while (numOfPendingIrps < 5) {
+
+			// Send an irp
+			DeviceIoControl(hDevice, IOCTL_MY_SOUND, nullptr, 0, nullptr, 0, nullptr, &overLappedStructure);
+
+			errorCode = GetLastError();
+
+			// Check if it's in the pending state or not
+			if (errorCode != ERROR_IO_PENDING)
+			{
+				std::cout << "Error: the irp is not in the pending state. Error code " << errorCode << std::endl;
+				return 0;
+			}
+
+			std::cout << "Success: the Irp in the pending state\n";
+
+			numOfPendingIrps++;
+			std::cout << "number of irps that was sent = " << numOfPendingIrps << std::endl;
+		}
+		// test if one of the queued IOCP packet is completed or not. If not then wait.
+
+		status = GetQueuedCompletionStatus(hCompletionPort, &NumberOfBytesTransferred, &CompletionKey, &lpOverLappedStructure, INFINITE);
 		
+		// Catched an IOCP packet
+		if (status)
+			numOfPendingIrps--;
+	
+		std::cout << "number of irps that was sent = " << numOfPendingIrps << std::endl;
+	}
+		*/
 	return 0;
 }
 
