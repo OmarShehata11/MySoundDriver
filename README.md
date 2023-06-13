@@ -23,5 +23,6 @@ To change the sound file. just go the user-mode app and in the line **93** put y
 ### Some future changes needed
  - make the user-mode app send Irps automatically.
  - add PeekContext to Irps to distinguish between the different events (plugged-in or out). 
+ - signing the driver
 
 
